@@ -105,15 +105,15 @@ Funcion que convierte la imagen indicada como parametro a escala de grises.
 entrada: puntero a un struct que indica la imagen a convertir.
 */
 
-void *to_gray_scale(void *r){
-    
-	//thread_data *thread = (thread_data *)thread_bmp_image;
-    int r2 = (intptr_t)r;
+void *to_gray_scale(void *tdata){
+	thread_data *thread = (thread_data *)tdata;
+    int r2 = thread->row;
+	int amount = thread->threads;
     int column;
 	int row;
-    for(row = r2; row < image2->header.height; row = row + 7){
+    for(row = r2; row < image2->header.height; row = row + amount){
 		for(column = 0; column < image2->header.width; column++){
-			int gray = image2->pixel_array[row][column].r*0.3 + image2->pixel_array[row][column].r*0.59 + image2->pixel_array[row][column].r*0.11;
+			int gray = image2->pixel_array[row][column].r*0.3 + image2->pixel_array[row][column].g*0.59 + image2->pixel_array[row][column].b*0.11;
             image2->pixel_array[row][column].r = gray;
             image2->pixel_array[row][column].g = gray;
             image2->pixel_array[row][column].b = gray; 
@@ -122,6 +122,37 @@ void *to_gray_scale(void *r){
     pthread_barrier_wait(&barrier);
 	return NULL;
 }
+
+/*
+Funcion que transforma la imagen en escala de grises dada como parametro y segun un umbral, binariza la imagen
+entrada: puntero a un struct que representa la imagen en escala de grises y un entero que indica el umbral 
+*/
+
+void *to_binary_image(void  *tdata){
+	//debe recibir struct
+	thread_data *data = (thread_data *)tdata;
+	int row,column;
+	int r2 = data->row; 
+	int threshold = data->threshold; 
+	int amount = data->threads;
+	for(row = r2; row < image2->header.height; row = row + amount){
+		for(column = 0; column < image2->header.width; column++){
+			if(image2->pixel_array[row][column].b > threshold){
+				image2->pixel_array[row][column].b = 255;
+				image2->pixel_array[row][column].g = 255;
+				image2->pixel_array[row][column].r = 255;
+			}
+			else{
+				image2->pixel_array[row][column].b = 0;
+				image2->pixel_array[row][column].g = 0;
+				image2->pixel_array[row][column].r = 0;
+			} 
+		}
+	}
+	pthread_barrier_wait(&barrier);
+	return NULL;
+}
+
 
 void write_bmp_file(bmp_image *image, char *bmp_file){
 	int i,j;
@@ -170,6 +201,8 @@ void write_bmp_file(bmp_image *image, char *bmp_file){
 }
 
 
+
+
 void execute_task(int amount_images, int amount_threads, pthread_t *threads, int threshold, int cat, int flag ){
     int cnt = 1;
 	int status = 0;
@@ -183,27 +216,45 @@ void execute_task(int amount_images, int amount_threads, pthread_t *threads, int
 		strcat(nfile,format);
 
         int t;
-		/*thread_data my_thread_data;
-		my_thread_data->row = malloc(amount_threads * sizeof(int));
-		*/
-		pthread_barrier_init(&barrier, NULL, 1);
+		
+		thread_data *data;
+		data = malloc(sizeof(thread_data)*amount_threads);
+		for(t = 0; t < amount_threads; t++){
+			data[t].row = t;
+			data[t].threshold = threshold;
+			data[t].categorization = cat;
+			data[t].threads = amount_threads;
+		}
+		
+		/* first thread to read_bmp_file */
+		if(pthread_barrier_init(&barrier, NULL, 1))
+			printf("Could not create a barrier to read_bmp_file");
         pthread_create(&threads[0], NULL, read_bmp_file, (void *) &nfile);
         pthread_barrier_destroy(&barrier);
 		pthread_join(threads[0],&image);
-
-		 if(pthread_barrier_init(&barrier, NULL, amount_threads))
-			printf("Could not create a barrier\n");
+		/* primera hebra creada lee imagen */
 		
-	    /*my_thread_data.image = (bmp_image *)image;
-		for(t = 0; t < amount_threads; t++)
-            my_thread_data.row[t] = t;*/
+		/* barrier to_gray_scale */
+		 if(pthread_barrier_init(&barrier, NULL, amount_threads))
+			printf("Could not create a barrier to_gray_scale\n");
 		image2 = (bmp_image *)image;
-        for(t = 0; t < amount_threads; t++){
-            pthread_create(&threads[t], NULL, &to_gray_scale, (void *)(intptr_t) t);
-        }
+        for(t = 0; t < amount_threads; t++)
+            pthread_create(&threads[t], NULL, &to_gray_scale, (void *)&data[t]);
 		for(t = 0; t < amount_threads; t++)
 			pthread_join(threads[t],&image);
         pthread_barrier_destroy(&barrier);
+		/* finished to_gray_scale */
+
+		/*barrier to binarized_image */
+		if(pthread_barrier_init(&barrier,NULL,amount_threads))
+			printf("Could not create barrier to binarized image\n");
+		for(t = 0; t < amount_threads; t++)
+			pthread_create(&threads[t], NULL, &to_binary_image, (void* )&data[t]);
+		for(t = 0; t < amount_threads; t++)
+			pthread_join(threads[t], &image);
+		pthread_barrier_destroy(&barrier);
+		/*finished to binarized_image */
+
 		cnt+=1;
 		write_bmp_file(image2,nfile);
 	}
