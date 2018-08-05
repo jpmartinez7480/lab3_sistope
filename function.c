@@ -165,7 +165,7 @@ int sort_out_image_binary(thread_data *tdata){
 			if(image2->pixel_array[row][column].b == 0) px_black++;
 		}
 	}
-	if(((px_black*100)/(image2->header.height*image2->header.width)) >= cat) return 1;
+	if(((px_black*100)/((image2->header.height/amount)*image2->header.width)) >= cat) return 1;
 	else return 0;
 }
 
@@ -281,7 +281,7 @@ void execute_task(int amount_images, int amount_threads, pthread_t *threads, int
 		/*finished to binarized_image */
 
 		print_result(data, nfile);
-
+		
 		cnt+=1;
 		write_bmp_file(image2, nfile);
 	}
