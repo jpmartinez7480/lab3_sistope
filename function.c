@@ -4,11 +4,14 @@
 #include <string.h>
 #include <errno.h>
 #include <pthread.h>
-
+#include "function.h"
 #include "thread_data.h"
 
 extern int errno;
 pthread_barrier_t barrier;
+pthread_mutex_t mutex_amount;
+pthread_mutex_t mutex_father;
+int amount_px_black = 0;
 void *image;
 bmp_image *image2;
 
@@ -153,28 +156,37 @@ void *to_binary_image(void  *tdata){
 	return NULL;
 }
 
-int sort_out_image_binary(thread_data *tdata){
+void *sort_out_image_binary(void *tdata){
+	thread_data *data = (thread_data *)tdata;
+	int row,column;
+	int r2 = data->row;
+	int cat = data->categorization;
+	int amount = data->threads;
+
+	for(row = r2; row < image2->header.height; row = row + amount){
+		for(column = 0; column < image2->header.width; column++){
+			if(image2->pixel_array[row][column].b == 0) {
+				pthread_mutex_lock(&mutex_amount);
+				amount_px_black++;
+				pthread_mutex_unlock(&mutex_amount);
+			}
+		}
+	}
+	
+}
+
+void print_result(thread_data *tdata, char * name){
 	int row,column;
 	int r2 = tdata->row;
 	int cat = tdata->categorization;
 	int amount = tdata->threads;
-	int px_black = 0;
-
-	for(row = r2; row < image2->header.height; row = row + amount){
-		for(column = 0; column < image2->header.width; column++){
-			if(image2->pixel_array[row][column].b == 0) px_black++;
-		}
-	}
-	if(((px_black*100)/((image2->header.height/amount)*image2->header.width)) >= cat) return 1;
-	else return 0;
-}
-
-void print_result(thread_data *tdata, char * name){
-	if (sort_out_image_binary(tdata))
-	{
+	
+	if(((amount_px_black*100)/((image2->header.height*image2->header.width))) >= cat){
+		amount_px_black = 0;
 		printf("|   %-5s   |   yes            |\n", name);
 	}
-	else {
+	else{
+		amount_px_black = 0;
 		printf("|   %-5s   |   no             |\n", name);
 	}
 }
@@ -182,6 +194,7 @@ void print_result(thread_data *tdata, char * name){
 void write_bmp_file(bmp_image *image, char *bmp_file){
 	int i,j;
 	int padding;
+	int is_nearly_black = 0;
 	char aux1[30] = "res_";
 	strcat(aux1,bmp_file);
 	FILE *aux = fopen(aux1,"wb");
@@ -280,10 +293,21 @@ void execute_task(int amount_images, int amount_threads, pthread_t *threads, int
 		pthread_barrier_destroy(&barrier);
 		/*finished to binarized_image */
 
+		/* start mutex to get if the image is nearly black */
+		for(t = 0; t < amount_threads; t++){
+			if(pthread_mutex_init(&mutex_amount, NULL))
+				printf("Could not create a mutex to last stage");
+			for(t = 0; t < amount_threads; t++)
+				pthread_create(&threads[t], NULL, &sort_out_image_binary, (void*)&data[t]);
+			for(t = 0; t < amount_threads; t++)
+				pthread_join(threads[t], &image);
+		}
+		/* end mutex to get if the image is nearly black */
+
 		print_result(data, nfile);
-		
-		cnt+=1;
 		write_bmp_file(image2, nfile);
+		cnt+=1;
+		
 	}
 	
 

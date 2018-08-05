@@ -76,7 +76,7 @@ int main(int argc, char **argv){
 		printf("|------------------|------------------|\n");	
 	}
 	else
-		printf("Ha ingresado no mostrar conclusion del analisis.");
+		printf("Ha ingresado no mostrar conclusion del analisis.\n");
 	execute_task(c,h,threads,u,n,b);
 	printf(" *************************************\n\n");
 	return 0;
